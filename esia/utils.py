@@ -12,6 +12,9 @@ import tempfile
 
 import pytz
 
+from subprocess import Popen, PIPE
+import getpass
+
 import requests
 
 from .exceptions import CryptoBackendError, HttpError, IncorrectJsonError
@@ -124,19 +127,32 @@ def csp_sign(thumbprint, password, data):
     #     "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached "
     #     "-thumbprint {thumbprint} -pin '{password}' {f_in} 2>&1 >/dev/null")
 
+    pwd = getpass.getpass()
     cmd = (
         "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached -thumbprint {thumbprint} {f_in}")
 
-    print(f'======\cmd: {cmd}\n======')
+    print(
+        f'======\ncmd: {cmd.format(tmp_dir=tmp_dir,thumbprint=thumbprint, password=password,f_in=source_path)}\n======')
 
-    check = os.system(cmd.format(
+    proc = Popen(cmd.format(
         tmp_dir=tmp_dir,
         thumbprint=thumbprint,
         password=password,
         f_in=source_path
-    ))
+    ), stdout=PIPE, stdin=PIPE, stderr=PIPE, universal_newlines=True)
 
-    print(f'======\ncheck: {check}\n======')
+    proc.stdin.write("{}\n".format(pwd))
+    proc.communicate(input="{}\n".format("Y"))
+
+    # print(
+    #     f'======\ncmd: {cmd.format(tmp_dir=tmp_dir,thumbprint=thumbprint, password=password,f_in=source_path)}\n======')
+
+    # os.system(cmd.format(
+    #     tmp_dir=tmp_dir,
+    #     thumbprint=thumbprint,
+    #     password=password,
+    #     f_in=source_path
+    # ))
 
     signed_message = open(destination_path, 'rb').read()
     os.unlink(source_path)
@@ -157,8 +173,9 @@ def sign_params(params, settings, backend='csp'):
     :return: подписанные параметры запроса
     :rtype: dict
     """
-    plaintext = params.get('scope', '') + params.get('timestamp', '') + \
-        params.get('client_id', '') + params.get('state', '')
+    plaintext = params.get('scope') + params.get('timestamp') + \
+        params.get('client_id') + params.get('state')
+
     if backend == 'csp':
         raw_client_secret = csp_sign(
             settings.csp_cert_thumbprint,
@@ -182,5 +199,5 @@ def get_timestamp():
     :return: текущая дата и время
     :rtype: str
     """
-    return datetime.datetime.now(pytz.utc).\
+    return datetime.datetime.now(pytz.timezone('Europe/Moscow')).\
         strftime('%Y.%m.%d %H:%M:%S %z').strip()
