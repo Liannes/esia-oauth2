@@ -120,15 +120,22 @@ def csp_sign(thumbprint, password, data):
     source_path = source_file.name
     destination_path = source_path + '.sgn'
 
+    # cmd = (
+    #     "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached "
+    #     "-thumbprint {thumbprint} -pin '{password}' {f_in} 2>&1 >/dev/null")
+
     cmd = (
         "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached "
-        "-thumbprint {thumbprint} -pin '{password}' {f_in} 2>&1 >/dev/null")
-    os.system(cmd.format(
+        "-thumbprint {thumbprint} {f_in} 2>&1 >/dev/null")
+
+    check = os.system(cmd.format(
         tmp_dir=tmp_dir,
         thumbprint=thumbprint,
         password=password,
         f_in=source_path
     ))
+
+    print(f'======\ncheck: {check}\n======')
 
     signed_message = open(destination_path, 'rb').read()
     os.unlink(source_path)
