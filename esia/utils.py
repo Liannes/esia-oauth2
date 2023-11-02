@@ -128,17 +128,16 @@ def csp_sign(thumbprint, password, data):
     #     "-thumbprint {thumbprint} -pin '{password}' {f_in} 2>&1 >/dev/null")
 
     cmd = (
-        "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached -thumbprint {thumbprint} {f_in}")
+        f"cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached -thumbprint {thumbprint} {destination_path}")
+
+    # cmd = (
+    # "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached -thumbprint {thumbprint} {f_in}")
 
     print(
-        f'======\ncmd: {cmd.format(tmp_dir=tmp_dir,thumbprint=thumbprint, password=password,f_in=source_path)}\n======')
+        f'======\ncmd: {cmd}\n======')
 
-    proc = Popen(cmd.format(
-        tmp_dir=source_path,
-        thumbprint=thumbprint,
-        password=password,
-        f_in=destination_path
-    ), stdout=PIPE, stdin=PIPE, stderr=PIPE, universal_newlines=True)
+    proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
+                 stderr=PIPE, universal_newlines=True)
     proc.communicate(input="{}\n".format("Y"))
 
     # print(
