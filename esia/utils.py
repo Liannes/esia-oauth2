@@ -134,10 +134,10 @@ def csp_sign(thumbprint, password, data):
         f'======\ncmd: {cmd.format(tmp_dir=tmp_dir,thumbprint=thumbprint, password=password,f_in=source_path)}\n======')
 
     proc = Popen(cmd.format(
-        tmp_dir=tmp_dir,
+        tmp_dir=source_path,
         thumbprint=thumbprint,
         password=password,
-        f_in=source_path
+        f_in=destination_path
     ), stdout=PIPE, stdin=PIPE, stderr=PIPE, universal_newlines=True)
     proc.communicate(input="{}\n".format("Y"))
 
