@@ -64,7 +64,7 @@ def smime_sign(certificate_file, private_key_file, data, backend='m2crypto'):
         from M2Crypto import SMIME, BIO
 
         if not isinstance(data, bytes):
-            data = bytes(data)
+            data = bytes(data, 'utf-8')
 
         signer = SMIME.SMIME()
         signer.load_key(private_key_file, certificate_file)
@@ -125,8 +125,9 @@ def csp_sign(thumbprint, password, data):
     #     "-thumbprint {thumbprint} -pin '{password}' {f_in} 2>&1 >/dev/null")
 
     cmd = (
-        "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached "
-        "-thumbprint {thumbprint} {f_in} 2>&1 >/dev/null")
+        "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached -thumbprint {thumbprint} {f_in}")
+
+    print(f'======\cmd: {cmd}\n======')
 
     check = os.system(cmd.format(
         tmp_dir=tmp_dir,
