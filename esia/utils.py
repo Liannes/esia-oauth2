@@ -127,7 +127,6 @@ def csp_sign(thumbprint, password, data):
     #     "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached "
     #     "-thumbprint {thumbprint} -pin '{password}' {f_in} 2>&1 >/dev/null")
 
-    pwd = getpass.getpass()
     cmd = (
         "cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached -thumbprint {thumbprint} {f_in}")
 
@@ -140,8 +139,6 @@ def csp_sign(thumbprint, password, data):
         password=password,
         f_in=source_path
     ), stdout=PIPE, stdin=PIPE, stderr=PIPE, universal_newlines=True)
-
-    proc.stdin.write("{}\n".format(pwd))
     proc.communicate(input="{}\n".format("Y"))
 
     # print(
