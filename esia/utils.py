@@ -48,128 +48,85 @@ def make_request(url, method='GET', headers=None, data=None, verify=True):
         raise IncorrectJsonError(e)
 
 
-def smime_sign(certificate_file, private_key_file, data, backend='m2crypto'):
-    """
-    Подписывает данные в формате SMIME с использование sha256.
-    В качестве бэкенда используется либо вызов openssl, либо
-    библиотека M2Crypto
-
-    :param str certificate_file: путь к сертификату
-    :param str private_key_file: путь к приватному ключу
-    :param str data: подписываемые данные
-    :param str backend: (optional) бэкенд, используемый
-        для подписи (m2crypto|openssl)
-    :raises CryptoBackendError: если неверно указан backend
-    :return: открепленная подпись
-    :rtype: str
-    """
-    if backend == 'm2crypto' or backend is None:
-        from M2Crypto import SMIME, BIO
-
-        if not isinstance(data, bytes):
-            data = bytes(data, 'utf-8')
-
-        signer = SMIME.SMIME()
-        signer.load_key(private_key_file, certificate_file)
-        p7 = signer.sign(
-            BIO.MemoryBuffer(data), flags=SMIME.PKCS7_DETACHED, algo='sha256')
-        signed_message = BIO.MemoryBuffer()
-        p7.write_der(signed_message)
-        return signed_message.read()
-    elif backend == 'openssl':
-        source_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-        source_file.write(data)
-        source_file.close()
-        source_path = source_file.name
-
-        destination_file = tempfile.NamedTemporaryFile(mode='wb', delete=False)
-        destination_file.close()
-        destination_path = destination_file.name
-
-        cmd = (
-            'openssl smime -sign -md sha256 -in {f_in} -signer {cert} -inkey '
-            '{key} -out {f_out} -outform DER')
-        os.system(cmd.format(
-            f_in=source_path,
-            cert=certificate_file,
-            key=private_key_file,
-            f_out=destination_path,
-        ))
-
-        signed_message = open(destination_path, 'rb').read()
-        os.unlink(source_path)
-        os.unlink(destination_path)
-        return signed_message
-    else:
-        raise CryptoBackendError(
-            'Unknown cryptography backend. Use openssl or m2crypto value.')
-
-
-def csp_sign(thumbprint, password, data):
+def csp_sign(system, container_name, container_password, csp_path, data):
     """
     Подписывает данные с использованием ГОСТ Р 34.10-2012 открепленной подписи.
     В качестве бэкенда используется утилита cryptcp из ПО КриптоПРО CSP.
-
-    :param str thumbprint: SHA1 отпечаток сертификата, связанного
-        с зкарытым ключем
-    :param str password: пароль для контейнера закрытого ключа
-    :param str data: подписываемые данные
+    :param str system: Название системы
+    :param str container_name: Название контенйера
+    :param str container_password: Пароль для контейнера закрытого ключа
+    :param str csp_path: Путь до Крипто-программы
+    :param str data: Подписываемый текст
+    :raises CryptoBackendError: Произошла ошибка при подписании
     """
+
+    # Получаем темп путь
     tmp_dir = tempfile.gettempdir()
-    source_file = tempfile.NamedTemporaryFile(
-        mode='w', delete=False, dir=tmp_dir)
-    source_file.write(data)
-    source_file.close()
-    source_path = source_file.name
-    destination_path = source_path + '.sgn'
+    # Записываем текст
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, dir=tmp_dir) as f:
+        # Название файла
+        in_path = f.name
+        f.write(data)
+        f.close()
+    # Название файла на выходе
+    out_path = in_path + '.sig'
+    try:
+        if system == 'Windows':
+            if container_password == '':
+                cmd = (
+                    f"{csp_path} -keys -cont {container_name} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
+                os.system(cmd)
+            else:
+                cmd = (
+                    f"{csp_path} -keys -cont {container_name} -password {container_password} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
+                os.system(cmd)
+        elif system == 'Linux':
+            if container_password == '':
+                cmd = (
+                    f"{csp_path} -keys -cont {container_name} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
+                proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
+                             stderr=PIPE, universal_newlines=True)
+                proc.communicate(input="{}\n".format("Y"))
+            else:
+                cmd = (
+                    f"{csp_path} -keys -cont {container_name} -password {container_password} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
+                proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
+                             stderr=PIPE, universal_newlines=True)
+                proc.communicate(input="{}\n".format("Y"))
 
-    cmd = (
-        f"cryptcp -signf -norev -dir {tmp_dir} -der -strict -cert -detached -thumbprint {thumbprint} {source_path}")
+        with open(out_path, 'rb') as f:
+            data = f.read()
+            signed_message = bytes(reversed(data))
+            f.close()
 
-    print(
-        f'======\ncmd: {cmd}\n======')
+        os.unlink(in_path)
+        os.unlink(out_path)
 
-    proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
-                 stderr=PIPE, universal_newlines=True)
-    proc.communicate(input="{}\n".format("Y"))
+        return signed_message
 
-    # os.system(cmd.format(
-    #     tmp_dir=tmp_dir,
-    #     thumbprint=thumbprint,
-    #     password=password,
-    #     f_in=source_path
-    # ))
-
-    signed_message = open(destination_path, 'rb').read()
-    os.unlink(source_path)
-    os.unlink(destination_path)
-    return signed_message
+    except Exception as e:
+        return CryptoBackendError(e)
 
 
-def sign_params(params, settings, backend='csp'):
+def sign_params(params, settings):
     """
     Подписывает параметры запроса и добавляет в params ключ client_secret.
-    Подпись основывается на полях: `scope`, `timestamp`, `client_id`, `state`.
-
+    Подпись основывается на полях:
+        `client_id`, `scope`, `scope_org`, `timestamp`, `state`, `redirect_uri`.
     :param dict params: параметры запроса
     :param EsiaSettings settings: настройки модуля ЕСИА
-    :param str backend: (optional) бэкенд используемый
-        для подписи (m2crypto|openssl|csp)
-    :raises CryptoBackendError: если неверно указан backend
     :return: подписанные параметры запроса
     :rtype: dict
     """
-    plaintext = params.get('scope') + params.get('timestamp') + \
-        params.get('client_id') + params.get('state')
+    plaintext = params.get('client_id') + params.get('scope') + params.get('scope_org') + params.get('timestamp') + \
+        params.get('state') + params.get('redirect_uri')
 
-    if backend == 'csp':
-        raw_client_secret = csp_sign(
-            settings.csp_cert_thumbprint,
-            settings.csp_container_pwd, plaintext)
-    else:
-        raw_client_secret = smime_sign(
-            settings.certificate_file, settings.private_key_file,
-            plaintext, backend)
+    raw_client_secret = csp_sign(
+        settings.unix,
+        settings.csp_certificate_name,
+        settings.csp_certificate_pass,
+        settings.csptest_path, plaintext)
+
     params.update(
         client_secret=base64.urlsafe_b64encode(
             raw_client_secret).decode('utf-8'),

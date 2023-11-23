@@ -31,3 +31,7 @@ class CryptoBackendError(Exception):
 
 class ConfigFileError(Exception):
     pass
+
+
+class ConfigError(Exception):
+    pass

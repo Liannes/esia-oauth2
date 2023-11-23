@@ -7,6 +7,8 @@
 import os
 import os.path
 import uuid
+import json
+import base64
 
 try:
     from configparser import RawConfigParser
@@ -22,121 +24,62 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 
 from .exceptions import (
-    ConfigFileError, CryptoBackendError, IncorrectMarkerError)
+    ConfigError, CryptoBackendError, IncorrectMarkerError)
 
 from .utils import get_timestamp, make_request, sign_params
 
 
 class EsiaSettings(object):
     def __init__(
-            self, esia_client_id, redirect_uri, certificate_file,
-            private_key_file, esia_service_url, esia_scope,
-            crypto_backend='m2crypto', esia_token_check_key=None,
-            logout_redirect_uri=None, csp_cert_thumbprint='',
-            csp_container_pwd='', ssl_verify=True):
+            self, esia_client_id,
+            redirect_uri,
+            esia_service_url,
+            unix,
+            esia_scope,
+            esia_scope_org,
+            esia_token_check_key=None,
+            logout_redirect_uri=None,
+            csptest_path='',
+            csp_certificate_name='',
+            csp_certificate_pass='',
+            csp_certificate_hash='',
+            ssl_verify=True
+    ):
         """
         Класс настроек ЕСИА
-        :param str esia_client_id: идентификатор клиента в ЕСИА
-            (указывается в заявке)
-        :param str redirect_uri: URI по которому браузер будет перенаправлен
-            после ввода учетных данны в ЕСИА
-        :param str certificate_file: путь к сертификату клиента
-            (прилагается к заявке)
-        :param str private_key_file: путь к приватному ключу клиента
+        :param str unix: Указать на какой системе будет использоваеться библиотека (Windows или Linux)
+        :param str esia_client_id: мнемоника клиента (Можно узнать в заявке, либо через тех.портале ЕСИА)
+        :param str redirect_uri: URI по которому браузер будет перенаправленпосле ввода учетных данны в ЕСИА
         :param str esia_service_url: базовый URL сервиса ЕСИА
-        :param str esia_scope: список scope, разделенный пробелами, доступный
-            клиенту (указывается в заявке)
-        :param str or None esia_token_check_key: путь к публичному ключу для
-            проверки JWT (access token)
-            необходимо запросить у технической поддержки ЕСИА
-        :param str crypto_backend: optional, задает крипто бэкенд, может
-            принимать значения: m2crypto, openssl, csp
-        :param str csp_cert_thumbprint: optional, задает SHA1 отпечаток
-            сертификата, связанного с контейнером (отображается по выводу
-            certmgr --list), например: 5c84a6a58bbeb6578ff7d26f4ea65b6de5f9f5b8
-        :param str csp_container_pwd: optional, пароль для контейнера
-            закрытого ключа
-        :param boolean ssl_verify: optional, производить ли верификацию
-            ssl-сертификата при запросах к сервису ЕСИА?
+        :param str esia_scope: список scope для пользователей, разделенный пробелами (Таблица 67 в методичке ЕСИА)
+        :param str esia_scope_org: список scope для организации, разделенный пробелами (Таблица 67 в методичке ЕСИА)
+        :param str or None esia_token_check_key: путь к публичному ключу для проверки JWT (access token) необходимо запросить у технической поддержки ЕСИА
+        :param str csptest_path: указать путь к csptest-программе в пакете Крипто-Про CSP (Для win: "C:\Program Files (x86)\Crypto Pro\CSP\csptest.exe", ковычки обязательны )
+        :param str csp_certificate_name: указать название контейнера (csptest -keyset -enum_cont -fqcn -verifyc). Обязательно с приставкой r"name"
+        :param sty csp_certificate_pass: пароль для контейнера (если пароля нет, то поставить "")
+        :param str csp_certificate_hash: хэш-сертификата полученного через утилиту ЕСИА (http://esia.gosuslugi.ru/public/calc_cert_hash_unix.zip)
+        :param boolean ssl_verify: optional, производить ли верификацию ssl-сертификата при запросах к сервису ЕСИА?
         """
+        self.unix = unix
         self.esia_client_id = esia_client_id
         self.redirect_uri = redirect_uri
-        self.certificate_file = certificate_file
-        self.private_key_file = private_key_file
         self.esia_service_url = esia_service_url
         self.esia_scope = esia_scope
+        self.esia_scope_org = esia_scope_org
         self.esia_token_check_key = esia_token_check_key
-        self.crypto_backend = crypto_backend
+        self.csptest_path = csptest_path
+        self.csp_certificate_name = csp_certificate_name
+        self.csp_certificate_pass = csp_certificate_pass
+        self.csp_certificate_hash = csp_certificate_hash
         self.logout_redirect_uri = logout_redirect_uri
-        self.csp_cert_thumbprint = csp_cert_thumbprint
-        self.csp_container_pwd = csp_container_pwd
         self.ssl_verify = ssl_verify
 
-        if self.crypto_backend == 'csp' and not self.csp_cert_thumbprint:
-            raise CryptoBackendError(
-                'Crypro backend is "csp" but "CSP_CERT_THUMBPRINT" '
-                'variable is empty')
-
-
-class EsiaConfig(EsiaSettings):
-    def __init__(self, config_file, *args, **kwargs):
-        """
-        Класс настроек ЕСИА на основе конфигурационного файла
-
-        :param str config_file: путь к конфигурационному ini-файлу
-        :raises ConfigFileError: если указан неверный путь или файл недоступен
-            для чтения
-        :raises ConfigParser.*: при ошибках в формате файла или параметра
-        """
-        if os.path.isfile(config_file) and os.access(config_file, os.R_OK):
-            conf = RawConfigParser()
-            conf.read(config_file)
-            base_dir = os.path.dirname(config_file)
-
-            kwargs = {
-                'esia_client_id': conf.get('esia', 'CLIENT_ID'),
-                'redirect_uri': conf.get('esia', 'REDIRECT_URI'),
-                'esia_service_url': conf.get('esia', 'SERVICE_URL'),
-                'esia_scope': conf.get('esia', 'SCOPE'),
-                'crypto_backend': conf.get('esia', 'CRYPTO_BACKEND'),
-                'certificate_file': None,
-                'private_key_file': None,
-                'csp_cert_thumbprint': None,
-                'csp_container_pwd': None,
-                'ssl_verify': True
-            }
-
-            # Openssl, M2Crypto params
-            if conf.has_option('esia', 'CERT_FILE') and \
-                    conf.has_option('esia', 'PRIV_KEY_FILE'):
-                cert_f = conf.get('esia', 'CERT_FILE')
-                pkey_f = conf.get('esia', 'PRIV_KEY_FILE')
-                kwargs['certificate_file'] = base_dir + '/' + cert_f
-                kwargs['private_key_file'] = base_dir + '/' + pkey_f
-
-            # CryptoPro CSP params
-            if conf.has_option('esia', 'CSP_CERT_THUMBPRINT'):
-                kwargs['csp_cert_thumbprint'] = conf.get(
-                    'esia', 'CSP_CERT_THUMBPRINT')
-                kwargs['csp_container_pwd'] = conf.get(
-                    'esia', 'CSP_CONTAINER_PWD')
-
-            if conf.has_option('esia', 'JWT_CHECK_KEY'):
-                token_check_key = conf.get('esia', 'JWT_CHECK_KEY')
-                kwargs['esia_token_check_key'] = \
-                    base_dir + '/' + token_check_key
-
-            if conf.has_option('esia', 'LOGOUT_REDIRECT_URI'):
-                redir = conf.get('esia', 'LOGOUT_REDIRECT_URI')
-                kwargs['logout_redirect_uri'] = redir
-
-            if conf.has_option('esia', 'SSL_VERIFY'):
-                ssl_verify = conf.getboolean('esia', 'SSL_VERIFY')
-                kwargs['ssl_verify'] = ssl_verify
-
-            super(EsiaConfig, self).__init__(*args, **kwargs)
-        else:
-            raise ConfigFileError("Config file not exists or not readable!")
+        if not self.unix:
+            raise ConfigError('System not selected')
+        if not self.csptest_path:
+            raise ConfigError('No path to csptest')
+        if not self.csp_certificate_name:
+            raise ConfigError('Container name is not specified')
 
 
 class EsiaAuth(object):
@@ -144,8 +87,8 @@ class EsiaAuth(object):
     Класс отвечает за OAuth2 авторизацию черещ ЕСИА
     """
     _ESIA_ISSUER_NAME = 'http://esia.gosuslugi.ru/'
-    _AUTHORIZATION_URL = '/aas/oauth2/ac'
-    _TOKEN_EXCHANGE_URL = '/aas/oauth2/te'
+    _AUTHORIZATION_URL = '/aas/oauth2/v2/ac'
+    _TOKEN_EXCHANGE_URL = '/aas/oauth2/v2/te'
     _LOGOUT_URL = '/idp/ext/Logout'
 
     def __init__(self, settings):
@@ -154,32 +97,28 @@ class EsiaAuth(object):
         """
         self.settings = settings
 
-    def get_auth_url(self, state=None, redirect_uri=None):
+    def get_auth_url(self):
         """
         Возвращает URL для перехода к авторизации в ЕСИА или для
         автоматического редиректа по данному адресу
 
-        :param str or None state: идентификатор, будет возвращен как
-            GET параметр в redirected-запросе после авторизации.
-        :param str or None redirect_uri: URI, по которому будет
-            перенаправлен браузер после авторизации.
         :return: url
         :rtype: str
         """
         params = {
             'client_id': self.settings.esia_client_id,
             'client_secret': '',
-            'redirect_uri': redirect_uri or self.settings.redirect_uri,
+            'redirect_uri': self.settings.redirect_uri,
             'scope': self.settings.esia_scope,
             'response_type': 'code',
-            'state': state or str(uuid.uuid4()),
+            'state': str(uuid.uuid4()),
             'timestamp': get_timestamp(),
-            'access_type': 'offline'
+            'access_type': 'offline',
+            'scope_org': self.settings.esia_scope_org,
+            'client_certificate_hash': self.settings.csp_certificate_hash
         }
 
-        params = sign_params(
-            params, self.settings,
-            backend=self.settings.crypto_backend)
+        params = sign_params(params, self.settings)
 
         # sorted needed to make uri deterministic for tests.
         params = urlencode(sorted(params.items()))
@@ -215,16 +154,17 @@ class EsiaAuth(object):
             'client_id': self.settings.esia_client_id,
             'code': code,
             'grant_type': 'authorization_code',
-            'redirect_uri': redirect_uri or self.settings.redirect_uri,
+            'redirect_uri': self.settings.redirect_uri,
             'timestamp': get_timestamp(),
             'token_type': 'Bearer',
             'scope': self.settings.esia_scope,
             'state': state,
+            'scope_org': self.settings.esia_scope_org,
+            'client_certificate_hash': self.settings.csp_certificate_hash
         }
 
         params = sign_params(
-            params, self.settings,
-            backend=self.settings.crypto_backend
+            params, self.settings
         )
 
         url = '{base_url}{token_url}'.format(
@@ -241,12 +181,13 @@ class EsiaAuth(object):
             payload = self._validate_token(id_token)
         else:
             payload = self._parse_token(id_token)
+            oid = payload['urn:esia:sbj']['urn:esia:sbj:oid']
 
-        return EsiaInformationConnector(
-            access_token=response_json['access_token'],
-            oid=self._get_user_id(payload),
-            settings=self.settings
-        )
+            return EsiaInformationConnector(
+                access_token=response_json['access_token'],
+                oid=oid,
+                settings=self.settings
+            )
 
     def get_logout_url(self, redirect_uri=None):
         """
@@ -274,9 +215,16 @@ class EsiaAuth(object):
     def _parse_token(token):
         """
         :param str token: токен для декодирования
-        :rtype: dict
+        :rtype: json
         """
-        return jwt.decode(token, verify=False)
+        data = token.split('.')
+        payload = data[1]
+
+        source = base64.b64decode(payload).decode("utf-8")
+
+        res = json.loads(source)
+
+        return res
 
     @staticmethod
     def _get_user_id(payload):
@@ -311,6 +259,7 @@ class EsiaInformationConnector(object):
     """
     Класс для получения данных от ЕСИА REST сервиса
     """
+
     def __init__(self, access_token, oid, settings):
         """
         :param str access_token: access token
@@ -350,6 +299,7 @@ class EsiaInformationConnector(object):
     def get_person_main_info(self, accept_schema=None):
         """
         Возвращает основные сведения о персоне
+        Минимальный scope: openid, fullname
         :rtype: dict
         """
         url = '{base}/prns/{oid}'.format(
@@ -359,6 +309,7 @@ class EsiaInformationConnector(object):
     def get_person_addresses(self, accept_schema=None):
         """
         Возвращает адреса персоны
+        Минимальный scope: addresses
         :rtype: dict
         """
         url = '{base}/prns/{oid}/addrs?embed=(elements)'.format(
@@ -368,6 +319,7 @@ class EsiaInformationConnector(object):
     def get_person_contacts(self, accept_schema=None):
         """
         Возвращает контактную информацию персоны
+        Минимальный scope: email mobile
         :rtype: dict
         """
         url = '{base}/prns/{oid}/ctts?embed=(elements)'.format(
@@ -377,6 +329,7 @@ class EsiaInformationConnector(object):
     def get_person_documents(self, accept_schema=None):
         """
         Возвращает документы персоны
+        Минимальный scope: id_doc
         :rtype: dict
         """
         url = '{base}/prns/{oid}/docs?embed=(elements)'.format(
