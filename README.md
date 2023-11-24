@@ -50,10 +50,9 @@ openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -sha1 -keyout my_private.ke
 
 ### Пример использования в Django
 
-Создайте конфигурационный файл esia.ini следующего содержания:
+Конфигурация
 
 ```
-[esia]
 SETTINGS = EsiaSettings(
         esia_client_id='TESTAPP',
         redirect_uri='http://localhost:3000/return',
