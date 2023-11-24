@@ -84,15 +84,17 @@ def csp_sign(system, container_name, container_password, csp_path, data):
             if container_password == '':
                 cmd = (
                     f"{csp_path} -keys -cont {container_name} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
-                proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
-                             stderr=PIPE, universal_newlines=True)
-                proc.communicate(input="{}\n".format("Y"))
+                os.system(cmd)
+                # proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
+                #              stderr=PIPE, universal_newlines=True)
+                # proc.communicate(input="{}\n".format("Y"))
             else:
                 cmd = (
                     f"{csp_path} -keys -cont {container_name} -password {container_password} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
-                proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
-                             stderr=PIPE, universal_newlines=True)
-                proc.communicate(input="{}\n".format("Y"))
+                os.system(cmd)
+                # proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
+                #              stderr=PIPE, universal_newlines=True)
+                # proc.communicate(input="{}\n".format("Y"))
 
         with open(out_path, 'rb') as f:
             data = f.read()
