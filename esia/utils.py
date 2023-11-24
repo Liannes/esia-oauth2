@@ -80,15 +80,15 @@ def csp_sign(container_name, container_password, csp_path, data):
                 f"{csp_path} -keys -cont {container_name} -password {container_password} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
             os.system(cmd)
 
-            with open(out_path, 'rb') as f:
-                data = f.read()
-                signed_message = bytes(reversed(data))
-                f.close()
+        with open(out_path, 'rb') as f:
+            data = f.read()
+            signed_message = bytes(reversed(data))
+            f.close()
 
-            os.unlink(in_path)
-            os.unlink(out_path)
+        os.unlink(in_path)
+        os.unlink(out_path)
 
-            return signed_message
+        return signed_message
 
     except Exception as e:
         raise CryptoBackendError(e)
