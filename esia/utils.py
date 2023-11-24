@@ -48,7 +48,7 @@ def make_request(url, method='GET', headers=None, data=None, verify=True):
         raise IncorrectJsonError(e)
 
 
-def csp_sign(system, container_name, container_password, csp_path, data):
+def csp_sign(container_name, container_password, csp_path, data):
     """
     Подписывает данные с использованием ГОСТ Р 34.10-2012 открепленной подписи.
     В качестве бэкенда используется утилита cryptcp из ПО КриптоПРО CSP.
@@ -71,44 +71,27 @@ def csp_sign(system, container_name, container_password, csp_path, data):
     # Название файла на выходе
     out_path = in_path + '.sig'
     try:
-        if system == 'Windows':
-            if container_password == '':
-                cmd = (
-                    f"{csp_path} -keys -cont {container_name} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
-                os.system(cmd)
-            else:
-                cmd = (
-                    f"{csp_path} -keys -cont {container_name} -password {container_password} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
-                os.system(cmd)
-        elif system == 'Linux':
-            if container_password == '':
-                cmd = (
-                    f"{csp_path} -keys -cont {container_name} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
-                check = os.system(cmd)
-                print(f'\n\n{check}\n\n')
-                # proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
-                #              stderr=PIPE, universal_newlines=True)
-                # proc.communicate(input="{}\n".format("Y"))
-            else:
-                cmd = (
-                    f"{csp_path} -keys -cont {container_name} -password {container_password} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
-                os.system(cmd)
-                # proc = Popen(cmd.split(' '), stdout=PIPE, stdin=PIPE,
-                #              stderr=PIPE, universal_newlines=True)
-                # proc.communicate(input="{}\n".format("Y"))
+        if container_password == '':
+            cmd = (
+                f"{csp_path} -keys -cont {container_name} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
+            os.system(cmd)
+        else:
+            cmd = (
+                f"{csp_path} -keys -cont {container_name} -password {container_password} -sign GOST12_256 -in {in_path} -out {out_path} -keytype exchange -silent")
+            os.system(cmd)
 
-        with open(out_path, 'rb') as f:
-            data = f.read()
-            signed_message = bytes(reversed(data))
-            f.close()
+            with open(out_path, 'rb') as f:
+                data = f.read()
+                signed_message = bytes(reversed(data))
+                f.close()
 
-        os.unlink(in_path)
-        os.unlink(out_path)
+            os.unlink(in_path)
+            os.unlink(out_path)
 
-        return signed_message
+            return signed_message
 
     except Exception as e:
-        return CryptoBackendError(e)
+        raise CryptoBackendError(e)
 
 
 def sign_params(params, settings):
@@ -125,7 +108,6 @@ def sign_params(params, settings):
         params.get('state') + params.get('redirect_uri')
 
     raw_client_secret = csp_sign(
-        settings.unix,
         settings.csp_certificate_name,
         settings.csp_certificate_pass,
         settings.csptest_path, plaintext)

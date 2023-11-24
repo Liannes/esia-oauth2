@@ -34,7 +34,6 @@ class EsiaSettings(object):
             self, esia_client_id,
             redirect_uri,
             esia_service_url,
-            unix,
             esia_scope,
             esia_scope_org,
             esia_token_check_key=None,
@@ -47,20 +46,18 @@ class EsiaSettings(object):
     ):
         """
         Класс настроек ЕСИА
-        :param str unix: Указать на какой системе будет использоваеться библиотека (Windows или Linux)
         :param str esia_client_id: мнемоника клиента (Можно узнать в заявке, либо через тех.портале ЕСИА)
         :param str redirect_uri: URI по которому браузер будет перенаправленпосле ввода учетных данны в ЕСИА
         :param str esia_service_url: базовый URL сервиса ЕСИА
         :param str esia_scope: список scope для пользователей, разделенный пробелами (Таблица 67 в методичке ЕСИА)
         :param str esia_scope_org: список scope для организации, разделенный пробелами (Таблица 67 в методичке ЕСИА)
         :param str or None esia_token_check_key: путь к публичному ключу для проверки JWT (access token) необходимо запросить у технической поддержки ЕСИА
-        :param str csptest_path: указать путь к csptest-программе в пакете Крипто-Про CSP (Для win: "C:\Program Files (x86)\Crypto Pro\CSP\csptest.exe", ковычки обязательны )
-        :param str csp_certificate_name: указать название контейнера (csptest -keyset -enum_cont -fqcn -verifyc). Обязательно с приставкой r"name"
+        :param str csptest_path: указать путь к csptest-программе в пакете Крипто-Про CSP (Стандартный путь windows: '"C:\Program Files (x86)\Crypto Pro\CSP\csptest.exe"', Linux: 'csptest' (Объявить полный путь в PATH, пример: ln -s /opt/cprocsp/bin/amd64/csptest /usr/bin/csptest) )
+        :param str csp_certificate_name: указать название контейнера (csptest -keyset -enum_cont -fqcn -verifyc). Для Windows: '\\\\\\\\\\\\\\\\.\\\\\\\\REGISTRY\\\\\\\\XXXXXX', для Linux: '"\\\\\\\\\\\\\\\\\\\\\\\\.\\\\\\\\HDIMAGE\\\\\\\\XXXXXX"'
         :param sty csp_certificate_pass: пароль для контейнера (если пароля нет, то поставить "")
         :param str csp_certificate_hash: хэш-сертификата полученного через утилиту ЕСИА (http://esia.gosuslugi.ru/public/calc_cert_hash_unix.zip)
         :param boolean ssl_verify: optional, производить ли верификацию ssl-сертификата при запросах к сервису ЕСИА?
         """
-        self.unix = unix
         self.esia_client_id = esia_client_id
         self.redirect_uri = redirect_uri
         self.esia_service_url = esia_service_url
@@ -74,8 +71,6 @@ class EsiaSettings(object):
         self.logout_redirect_uri = logout_redirect_uri
         self.ssl_verify = ssl_verify
 
-        if not self.unix:
-            raise ConfigError('System not selected')
         if not self.csptest_path:
             raise ConfigError('No path to csptest')
         if not self.csp_certificate_name:
@@ -129,7 +124,7 @@ class EsiaAuth(object):
             params=params)
 
     def complete_authorization(
-            self, code, state, validate_token=True, redirect_uri=None):
+            self, code, state, validate_token=None, redirect_uri=None):
         """
         Завершает авторизацию. Обменивает полученный code на access token.
         При этом может опционально производить JWT-валидацию ответа на основе
@@ -141,7 +136,7 @@ class EsiaAuth(object):
             который обменивается на access token
         :param str state: UUID запроса полученный из GET-параметра
         :param boolean validate_token: производить ли JWT-валидацию
-            ответа от ЕСИА
+            ответа от ЕСИА (Временно пропущен)
         :param str or None redirect_uri: URI на который браузер был
             перенаправлен после авторизации
         :rtype: EsiaInformationConnector
@@ -175,19 +170,20 @@ class EsiaAuth(object):
         response_json = make_request(
             url=url, method='POST', data=params,
             verify=self.settings.ssl_verify)
+
         id_token = response_json['id_token']
 
-        if validate_token:
-            payload = self._validate_token(id_token)
-        else:
-            payload = self._parse_token(id_token)
-            oid = payload['urn:esia:sbj']['urn:esia:sbj:oid']
+        # if validate_token:
+        #     payload = self._validate_token(id_token)
+        # else:
+        payload = self._parse_token(id_token)
+        oid = payload['urn:esia:sbj']['urn:esia:sbj:oid']
 
-            return EsiaInformationConnector(
-                access_token=response_json['access_token'],
-                oid=oid,
-                settings=self.settings
-            )
+        return EsiaInformationConnector(
+            access_token=response_json['access_token'],
+            oid=oid,
+            settings=self.settings
+        )
 
     def get_logout_url(self, redirect_uri=None):
         """
