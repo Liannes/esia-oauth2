@@ -349,3 +349,6 @@ class EsiaInformationConnector(object):
         url = '{base}/prns/{oid}//vhls?embed=(elements)'.format(
             base=self._rest_base_url, oid=self.oid)
         return self.esia_request(endpoint_url=url, accept_schema=accept_schema)
+
+    def get_oid_user(self, accept_chema=None):
+        return self.oid
